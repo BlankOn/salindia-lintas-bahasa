@@ -8,6 +8,5 @@ uvicorn[standard]>=0.30
 numpy>=1.26
 httpx>=0.27          # OpenAI speech-to-text option
 
-# Slides: PDF pages rendered server-side
-pypdfium2>=4.30
-pillow>=10
+# Slides are rendered in the browser (web/vendor/pdf.js), so the server needs
+# no PDF library at all.

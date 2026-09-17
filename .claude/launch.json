@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "salindia",
+      "runtimeExecutable": "./run.sh",
+      "runtimeArgs": [],
+      "port": 8000
+    }
+  ]
+}

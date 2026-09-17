@@ -5,14 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Salindia</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>" />
-<link rel="stylesheet" href="styles.css?v=18" />
+<link rel="stylesheet" href="styles.css?v=44" />
 </head>
 <body>
   <header class="bar">
     <div class="brand" id="brand">
       <span class="dot" id="dot"></span>
       <strong>Salindia</strong>
-      <span class="status" id="status" role="status">connecting…</span>
+      <span class="status" id="status" role="status">contacting the server…</span>
+      <span class="cost" id="cost" hidden role="status"></span>
+      <!-- The talk's title, and the way back into the title dialog: a typo
+           shouldn't mean a mislabelled record for the whole talk. -->
+      <button type="button" class="talk-title" id="titleChip" hidden></button>
     </div>
 
     <!-- Speech and translation live together up here; the footer is for the
@@ -23,34 +27,65 @@
         <span id="recLabel">Loading models…</span>
       </button>
 
-      <div class="seg" role="group" aria-label="Translation direction">
-        <button data-dir="id-en" aria-pressed="true">ID → EN</button>
-        <button data-dir="en-id" aria-pressed="false">EN → ID</button>
-        <button data-dir="auto" aria-pressed="false" hidden title="Detect Indonesian or English per sentence">Auto</button>
-      </div>
-
       <div class="meter" title="Input level — turns green while speech is detected">
         <div class="meter-fill" id="meterFill"></div>
         <div class="meter-thresh" id="meterThresh"></div>
       </div>
 
+      <div class="seg" role="group" aria-label="Translation direction">
+        <button data-dir="en-id" aria-pressed="true">EN → ID</button>
+        <button data-dir="id-en" aria-pressed="false">ID → EN</button>
+        <button data-dir="auto" aria-pressed="false" hidden title="Detect Indonesian or English per sentence">Auto</button>
+      </div>
+
+      <select id="mode" class="mode" aria-label="Translation mode"
+              title="How speech becomes the other language">
+        <option value="pipeline">Pipeline</option>
+        <option value="direct">Direct</option>
+      </select>
+
       <button id="contextBtn" class="ghost" title="Indonesian style and notes for the translator">Context</button>
 
-      <label class="toggle"><input type="checkbox" id="showSrc" /> Show original text</label>
-      <label class="toggle"><input type="checkbox" id="showLat" /> Show latency</label>
-      <button id="copy" class="ghost">Copy</button>
-      <button id="clear" class="ghost">Clear</button>
+      <label class="toggle" title="Show the original transcript and per-stage latency under each subtitle">
+        <input type="checkbox" id="debug" /> Enable debug mode
+      </label>
     </div>
   </header>
 
   <main class="stage" id="stage">
-    <img class="slide" id="slide" alt="" hidden />
+    <canvas class="slide" id="slide" hidden aria-label="Current slide"></canvas>
     <p class="hint" id="hint">
       <strong>Open slides</strong> to present a PDF, or just press <strong>Start listening</strong>.<br />
       Subtitles appear at the bottom.<br />
       <kbd>Space</kbd> / <kbd>→</kbd> next slide · <kbd>←</kbd> previous · <kbd>F</kbd> fullscreen · <kbd>T</kbd> switch language · <kbd>Shift</kbd>+<kbd>↑</kbd><kbd>↓</kbd> move subtitles
     </p>
-    <div class="live-badge" id="liveBadge" hidden><span></span><b id="liveDir"></b></div>
+    <!-- Progress lives in the corner, never over the slides: during a talk the
+         stage belongs to the presenter. -->
+    <div class="work" id="work" hidden role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="workTitle"></span>
+    </div>
+    <!-- Fullscreen has no top bar, so this is the only direction control on a
+         projector. Collapsed it is a dot and a label; hovering (or tabbing into
+         it) grows it into the switch itself. -->
+    <!-- tabindex so the keyboard can open it too: the buttons inside are
+         display:none until it expands, and nothing can focus its way into that. -->
+    <div class="live-badge" id="liveBadge" hidden tabindex="0"
+         title="Translation direction — click to switch">
+      <span class="live-dot" aria-hidden="true"></span>
+      <b id="liveDir"></b>
+      <span class="live-seg" role="group" aria-label="Translation direction">
+        <button type="button" data-dir="en-id" aria-pressed="false">EN → ID</button>
+        <button type="button" data-dir="id-en" aria-pressed="false">ID → EN</button>
+        <button type="button" data-dir="auto" aria-pressed="false" hidden>Auto</button>
+      </span>
+    </div>
+    <!-- Shown while listening with nothing on screen: all three dots are always
+         there, only their colour travels, so it reads as waiting rather than
+         loading. aria-hidden because it says nothing a screen reader needs. -->
+    <div class="waiting" id="waiting" hidden aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
     <div class="subs" id="subs" aria-live="polite"></div>
   </main>
 
@@ -66,11 +101,9 @@
       </span>
     </div>
 
-    <div class="spacer"></div>
+    <button id="fullscreen" class="ghost fs" title="Fullscreen (F)">Fullscreen</button>
 
-    <span class="group" role="group" aria-label="Display and subtitles">
-      <button id="fullscreen" class="ghost" title="Fullscreen (F)">Fullscreen</button>
-      <span class="sep" aria-hidden="true"></span>
+    <span class="group" role="group" aria-label="Subtitles">
       <span class="subpos" title="Subtitle position (Shift+↑ / Shift+↓)">
         Subtitles
         <button id="subsUp" class="ghost icon" aria-label="Move subtitles up">▲</button>
@@ -111,6 +144,7 @@
           <input type="password" id="openaiKey" autocomplete="off" spellcheck="false" placeholder="sk-…" />
         </label>
         <p class="note" id="keyNote">Kept in the server's memory only. It is never written to disk or to this browser.</p>
+        <p class="note" id="modeNote"></p>
       </div>
 
       <label class="choice">
@@ -127,6 +161,39 @@
 
       <div class="actions">
         <button type="submit" class="rec" id="engineGo">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="engine" id="accessDialog">
+    <form method="dialog" id="accessForm">
+      <h2>Salindia</h2>
+      <p class="sub">This instance is passphrase-protected. Ask whoever runs it.</p>
+
+      <label class="notes">Passphrase
+        <input type="password" id="passphrase" autocomplete="current-password"
+               spellcheck="false" />
+      </label>
+      <p class="error" id="accessError" hidden></p>
+
+      <div class="actions">
+        <button type="submit" class="rec" id="accessGo">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="engine" id="titleDialog">
+    <form method="dialog" id="titleForm">
+      <h2 id="titleHeading">What are you presenting?</h2>
+
+      <label class="notes">Title
+        <input type="text" id="talkTitle" maxlength="200" autocomplete="off"
+               placeholder="e.g. Q3 review — engineering all-hands" />
+      </label>
+      <p class="error" id="titleError" hidden></p>
+
+      <div class="actions">
+        <button type="submit" class="rec" id="titleGo">Start</button>
       </div>
     </form>
   </dialog>
@@ -166,6 +233,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=18"></script>
+  <script src="app.js?v=44"></script>
 </body>
 </html>

@@ -18,6 +18,8 @@ def _f(key: str, default: float) -> float:
     return float(os.environ.get(key, default))
 
 
+MODES = ("pipeline", "direct")
+
 SAMPLE_RATE = 16_000
 FRAME_MS = 20
 FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000
@@ -31,11 +33,23 @@ class Settings:
     # the speaker. The UI can change it per session.
     id_style: str = _s("ID_STYLE", "formal")
     # Direction a new connection starts in; the UI can switch it per session.
-    default_direction: str = _s("DIRECTION", "id-en")
+    # MODE=direct can only produce English, so en-id falls back there (see below).
+    default_direction: str = _s("DIRECTION", "en-id")
 
     # Speech-to-text engine: "local" (MLX Whisper), "openai" (API), or empty to
     # let the user pick in the browser before anything is loaded.
     asr_engine: str = _s("ASR_ENGINE", "")
+    # Skip the engine chooser entirely: "openai" or "local". The browser goes
+    # straight to the talk title. ASR_ENGINE is the older name and still works.
+    force_approach: str = _s("FORCE_APPROACH", _s("ASR_ENGINE", ""))
+
+    # Where per-talk records go. Relative paths resolve next to the project.
+    db_path: str = _s("DB_PATH", "salindia.sqlite3")
+
+    # Gate the whole app behind a shared phrase. Empty = open to anyone who can
+    # reach the port. This keeps the page off the open internet; it is not
+    # per-user auth, and it is only as private as the phrase you share.
+    access_passphrase: str = field(default=_s("ACCESS_PASSPHRASE", ""), repr=False)
     openai_api_key: str = field(default=_s("OPENAI_API_KEY", ""), repr=False)
     openai_base_url: str = _s("OPENAI_BASE_URL", "https://api.openai.com/v1")
     openai_asr_model: str = _s("OPENAI_ASR_MODEL", "whisper-1")
@@ -45,6 +59,9 @@ class Settings:
     openai_mt_model: str = _s("OPENAI_MT_MODEL", "gpt-4o-mini")
     # Live partials cost one API request per refresh, so they're off by default.
     openai_partials: bool = _s("OPENAI_PARTIALS", "0") not in ("", "0", "false", "no")
+    # A speculation the speaker talks through is thrown away; on the API that is
+    # a paid request, and the head start it buys is small next to the round-trip.
+    openai_speculate: bool = _s("OPENAI_SPECULATE", "0") not in ("", "0", "false", "no")
 
     asr_model: str = _s("ASR_MODEL", "mlx-community/whisper-large-v3-turbo")
     asr_model_direct: str = _s("ASR_MODEL_DIRECT", "mlx-community/whisper-large-v3-mlx")
@@ -77,6 +94,12 @@ class Settings:
     # Sentences processed concurrently (each model still runs one job at a time).
     final_workers: int = _i("FINAL_WORKERS", 3)
 
+    # Stop listening after this long with no speech. The browser stops its own
+    # capture too, but the server keeps its own clock: a wedged or killed page
+    # can leave the socket open and streaming silence, and with a paid engine
+    # that is real money. 0 disables.
+    idle_stop_s: float = _f("IDLE_STOP_S", 60.0)
+
     vad_abs_threshold: float = _f("VAD_ABS_THRESHOLD", 0.006)
     vad_noise_ratio: float = _f("VAD_NOISE_RATIO", 3.0)
     vad_onset_frames: int = _i("VAD_ONSET_FRAMES", 3)
@@ -89,38 +112,69 @@ class Settings:
     port: int = _i("PORT", 8000)
 
     @property
-    def directions(self) -> tuple[str, ...]:
+    def needs_passphrase(self) -> bool:
+        return bool(self.access_passphrase)
+
+    # -- mode-dependent views ------------------------------------------------
+    #
+    # The mode is switchable from the bar while the server runs, so everything
+    # it decides is a function of a mode argument. The properties below are the
+    # same answers for the mode this process started in.
+
+    def directions_for(self, mode: str) -> tuple[str, ...]:
         # Whisper's built-in translate task only ever outputs English, so direct
         # mode can't do en-id; that needs the LLM stage.
-        return ("id-en", "en-id") if self.mode == "pipeline" else ("id-en",)
+        return ("id-en", "en-id") if mode == "pipeline" else ("id-en",)
+
+    def asr_model_for(self, mode: str) -> str:
+        return self.asr_model if mode == "pipeline" else self.asr_model_direct
+
+    def default_direction_for(self, mode: str) -> str:
+        """The configured default, or the nearest thing this mode can do."""
+        dirs = self.directions_for(mode)
+        return self.default_direction if self.default_direction in dirs else dirs[0]
+
+    @property
+    def directions(self) -> tuple[str, ...]:
+        return self.directions_for(self.mode)
 
     def mt_model_for(self, direction: str) -> str:
         return {"id-en": self.mt_model_id_en, "en-id": self.mt_model_en_id}[direction]
 
     @property
     def effective_asr_model(self) -> str:
-        return self.asr_model if self.mode == "pipeline" else self.asr_model_direct
+        return self.asr_model_for(self.mode)
 
-    def public(self) -> dict:
-        """The subset worth showing in the UI."""
+    def public(self, mode: str | None = None) -> dict:
+        """The subset worth showing in the UI, as of ``mode`` (default: ours)."""
+        mode = mode or self.mode
+        directions = self.directions_for(mode)
         d = asdict(self)
-        d["asr_model"] = self.effective_asr_model
+        d["mode"] = mode
+        d["asr_model"] = self.asr_model_for(mode)
         d["mt_models"] = (
-            {k: self.mt_model_for(k) for k in self.directions}
-            if self.mode == "pipeline"
-            else {}
+            {k: self.mt_model_for(k) for k in directions} if mode == "pipeline" else {}
         )
-        d["directions"] = list(self.directions)
+        d["directions"] = list(directions)
+        d["default_direction"] = self.default_direction_for(mode)
+        d["needs_passphrase"] = self.needs_passphrase
+        # The dropdown in the bar offers these. MODE in the environment only
+        # says where a fresh server starts, not what it will accept later.
+        d["modes"] = list(MODES)
         return {
             k: d[k]
             for k in (
                 "mode",
+                "modes",
                 "asr_model",
                 "mt_models",
                 "directions",
                 "default_direction",
                 "id_style",
                 "silence_ms",
+                "idle_stop_s",
+                "force_approach",
+                "needs_passphrase",
                 "max_utterance_s",
             )
         }
@@ -128,13 +182,28 @@ class Settings:
 
 settings = Settings()
 
-if settings.mode not in ("pipeline", "direct"):
+# Whether MODE was chosen, as opposed to falling out of the default. The OpenAI
+# engine prefers direct mode on its own, but never over an explicit MODE=.
+MODE_IS_EXPLICIT = bool(os.environ.get("MODE"))
+
+if settings.mode not in MODES:
     raise SystemExit(f"MODE must be 'pipeline' or 'direct', got {settings.mode!r}")
 if settings.id_style not in ("formal", "casual", "match"):
     raise SystemExit(f"ID_STYLE must be formal, casual or match, got {settings.id_style!r}")
 if settings.asr_engine not in ("", "local", "openai"):
     raise SystemExit(f"ASR_ENGINE must be 'local', 'openai' or empty, got {settings.asr_engine!r}")
-if settings.default_direction not in settings.directions:
+if settings.force_approach not in ("", "local", "openai"):
+    raise SystemExit(
+        f"FORCE_APPROACH must be 'local', 'openai' or empty, got {settings.force_approach!r}"
+    )
+if settings.default_direction not in ("id-en", "en-id"):
+    raise SystemExit(
+        f"DIRECTION must be id-en or en-id, got {settings.default_direction!r}"
+    )
+if os.environ.get("DIRECTION") and settings.default_direction not in settings.directions:
+    # Both were asked for by name and they contradict each other. A default
+    # nobody chose just falls back instead (see default_direction_for), and the
+    # mode is switchable in the bar, so this only guards the starting pair.
     raise SystemExit(
         f"DIRECTION={settings.default_direction!r} is not available in "
         f"MODE={settings.mode} (choose from {', '.join(settings.directions)})"

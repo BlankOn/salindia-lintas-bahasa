@@ -35,6 +35,10 @@ Rules:
 - Keep every number, amount and currency exactly as spoken. Never convert
   currencies (Rp stays Rp, $ stays $).
 - If the input is not meaningful speech, output nothing.
+- You are a translator, not an assistant. Never address the speaker, never
+  ask for clarification, never explain or apologise, never mention the
+  translation itself. If you cannot translate the input, output nothing at
+  all -- an empty reply is always better than a remark.
 
 Examples:
 Aduh, macet banget nih di jalan.
@@ -89,6 +93,10 @@ _EN_ID_TAIL = """- Write it the way an Indonesian speaker would actually say it,
 - The input is speech-to-text, so it may lack punctuation or contain small
   transcription errors. Translate the intended meaning, not the literal string.
 - If the input is not meaningful speech, output nothing.
+- You are a translator, not an assistant. Never address the speaker, never
+  ask for clarification, never explain or apologise, never mention the
+  translation itself. If you cannot translate the input, output nothing at
+  all -- an empty reply is always better than a remark.
 
 Examples:
 """
@@ -165,6 +173,49 @@ def build_prompt(direction: str, style: str = "match", notes: str = "") -> str:
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
+# An interpreter that starts talking back. Asked to translate a fragment the
+# model can't make sense of, it sometimes answers the speaker instead --
+# "I'm sorry, but I need more context to do the translation." On a projector
+# that reads as the presenter saying it, which is worse than showing nothing.
+#
+# The prompts forbid it and mostly that holds, so this is the backstop. Two
+# signals must agree before anything is dropped: the sentence has to be shaped
+# like a refusal or a request, AND it has to be talking about the translation
+# itself. "Maaf, saya tidak bisa datang" is a real sentence and survives;
+# "Maaf, saya perlu konteks" is the model breaking character and does not.
+_META_SHAPE = re.compile(
+    r"""^\s*(?:
+        (?:i\s?'?m\s+)?sorry\b | apolog\w* | unfortunately\b
+      | i\s+(?:can\s?'?t|cannot|am\s+unable|would\s+need|need)\b
+      | (?:could|can|would)\s+you\b | please\s+(?:provide|clarify|repeat|specify|give)\b
+      | it\s+(?:seems|appears|looks)\b | there\s+(?:is|isn\s?'?t|was)\s+(?:no|not)\b
+      | as\s+an?\s+(?:ai|language\s+model)\b
+      | maaf\b | mohon\b | sayangnya\b | tolong\s+(?:berikan|sediakan|jelaskan)\b
+      | silak?han\s+(?:berikan|sediakan)\b
+      | (?:saya|aku)\s+(?:tidak\s+(?:bisa|dapat)|perlu|butuh|memerlukan)\b
+    )""",
+    re.IGNORECASE | re.VERBOSE,
+)
+_META_SUBJECT = re.compile(
+    # Indonesian stems are matched without word boundaries on purpose: affixes
+    # (di-, me-, -nya, -kan) mean "diterjemahkan" and "konteksnya" would slip
+    # past a \b. Those stems are distinctive enough to be safe bare.
+    r"(?:terjemah|konteks|kalimat)"
+    r"|\b(?:translat\w*|context|input|the\s+text|your\s+(?:text|message|input)|"
+    r"language\s+model|ai\s+(?:assistant|model)|asisten)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_meta(text: str) -> bool:
+    """True when the model answered the speaker instead of translating them."""
+    # Meta replies are one short sentence; a real utterance rarely is both.
+    return (
+        len(text) <= 240
+        and _META_SHAPE.search(text) is not None
+        and _META_SUBJECT.search(text) is not None
+    )
+
 
 @dataclass
 class MtResult:
@@ -183,6 +234,9 @@ def _clean(text: str) -> str:
     ).strip()
     if len(text) >= 2 and text[0] in "\"'" and text[-1] == text[0]:
         text = text[1:-1].strip()
+    if _is_meta(text):
+        log.info("dropped a chatbot-style reply: %r", text)
+        return ""
     return text
 
 

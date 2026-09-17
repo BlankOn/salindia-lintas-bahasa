@@ -99,6 +99,7 @@ class WhisperEngine:
 
     engine = "local"
     partials = True  # cheap here: re-decoding costs GPU time, not money
+    speculates = True  # same: a discarded speculative decode costs nothing
     auto_detect = False  # auto direction is offered with the OpenAI engine only
 
     def __init__(self, repo: str, task: str, gate: GpuGate | None = None) -> None:

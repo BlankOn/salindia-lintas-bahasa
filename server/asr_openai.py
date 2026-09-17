@@ -8,6 +8,10 @@ one it has. Differences worth knowing:
 - Live partials are off by default (OPENAI_PARTIALS). The local engine re-decodes
   about once a second while you talk; against the API that is a paid request
   per second for text that is thrown away moments later.
+- Speculative decoding is off for the same reason (OPENAI_SPECULATE). It starts
+  the final decode during a mid-sentence pause; when the speaker carries on, the
+  result is discarded -- free on a local GPU, a wasted paid request here. It also
+  buys less: against the API the round-trip dominates, not the head start.
 - ``whisper-1`` returns ``verbose_json`` with per-segment ``no_speech_prob`` /
   ``avg_logprob``, which feeds the hallucination filter. The ``gpt-*-transcribe``
   models only return plain ``json``, so only the phrase blocklists apply there.
@@ -29,6 +33,7 @@ import httpx
 import numpy as np
 
 from .asr import AsrError, AsrResult, _clean, _looks_hallucinated
+from .usage import record_audio
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +70,7 @@ class OpenAIWhisperEngine:
         base_url: str,
         task: str,
         partials: bool,
+        speculates: bool = False,
         transport: httpx.AsyncBaseTransport | None = None,  # tests inject a fake
     ) -> None:
         if task == "translate" and model != "whisper-1":
@@ -73,6 +79,7 @@ class OpenAIWhisperEngine:
         self.repo = f"openai/{model}"  # for logs and the UI
         self.task = task
         self.partials = partials
+        self.speculates = speculates
         # Auto direction needs the API to detect the spoken language itself.
         self.auto_detect = task == "transcribe"
         self._client = httpx.AsyncClient(
@@ -135,6 +142,10 @@ class OpenAIWhisperEngine:
         if initial_prompt:
             data["prompt"] = initial_prompt
         files = {"file": ("speech.wav", _wav_bytes(audio), "audio/wav")}
+
+        # Billed per minute of audio, so the clip length is the cost -- counted
+        # before the call, so a failed request still shows up as spend.
+        record_audio(self.model, len(audio) / 16_000)
 
         started = time.perf_counter()
         resp = await self._request("POST", path, data=data, files=files)

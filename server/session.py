@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Awaitable, Callable
@@ -90,8 +91,14 @@ class StreamSession:
         translators: dict[str, Translator],
         settings: Settings,
         directions: tuple[str, ...] | None = None,
+        usage: "Usage | None" = None,
+        on_usage: "Callable[[dict], Awaitable[None]] | None" = None,
     ) -> None:
         self.send = send
+        # Only set for the paid engines; None means nothing is being spent.
+        self.usage = usage
+        # Called with each fresh snapshot so the talk record keeps up.
+        self.on_usage = on_usage
         # What this connection may switch to; "auto" only when the engine can
         # detect the spoken language (see main.allowed_directions).
         self.directions = tuple(directions or settings.directions)
@@ -117,6 +124,9 @@ class StreamSession:
         self._silence_frames = 0
         self._speech_frames = 0
         self._active = False
+        # Idle watchdog: the server's own clock, independent of the page.
+        self._last_speech = time.monotonic()
+        self._idle = False
         self._frame_count = 0
 
         self._seq = 0
@@ -124,7 +134,9 @@ class StreamSession:
         self._partial_at_samples = 0
         self._last_partial_text = ""
 
-        self.direction = settings.default_direction
+        # Never start in a direction this mode cannot produce: MODE=direct only
+        # ever outputs English, so an en-id default lands on id-en instead.
+        self.direction = settings.default_direction_for(settings.mode)
         self._utt_dir = self.direction
 
         self._spec: _Speculation | None = None
@@ -139,7 +151,7 @@ class StreamSession:
         self.style = settings.id_style
         self.notes = ""
         # Auto mode: the last language heard, used when a sentence gives no clue.
-        self._last_lang = "id" if settings.default_direction == "id-en" else "en"
+        self._last_lang = "id" if self.direction == "id-en" else "en"
         self._partial_task: asyncio.Task | None = None
         self._closed = False
 
@@ -182,6 +194,10 @@ class StreamSession:
         """Accept a chunk of float32 mono 16 kHz audio."""
         if self._closed:
             return
+        # Idle-stopped: drop the audio on the floor. A page that keeps streaming
+        # after the stop -- frozen, or killed mid-stream -- costs nothing.
+        if self._idle:
+            return
 
         self._residual = (
             pcm if self._residual.size == 0 else np.concatenate([self._residual, pcm])
@@ -196,6 +212,28 @@ class StreamSession:
         for i in range(n_frames):
             frame = usable[i * FRAME_SAMPLES : (i + 1) * FRAME_SAMPLES]
             await self._handle_frame(frame)
+
+    async def _maybe_idle_stop(self) -> None:
+        """Stop listening after a stretch with no speech at all."""
+        limit = self.cfg.idle_stop_s
+        if limit <= 0 or self._idle:
+            return
+        if time.monotonic() - self._last_speech < limit:
+            return
+        if self._active:
+            await self._finalise(forced=False)
+        self._idle = True
+        log.info("idle for %.0fs with no speech -- stopping", limit)
+        await self.send({"type": "idle_stop", "after_s": round(limit)})
+
+    def resume(self) -> bool:
+        """Listen again after an idle stop. False if it was never stopped."""
+        if not self._idle:
+            return False
+        self._idle = False
+        self._last_speech = time.monotonic()
+        log.info("listening again after an idle stop")
+        return True
 
     async def _handle_frame(self, frame: np.ndarray) -> None:
         speaking = self.vad.is_speech(frame)
@@ -212,6 +250,7 @@ class StreamSession:
             )
 
         if speaking:
+            self._last_speech = time.monotonic()
             if not self._active:
                 self._begin_utterance()
                 await self.send(
@@ -229,14 +268,24 @@ class StreamSession:
             needed = self._silence_needed()
             if silent_ms >= needed:
                 await self._finalise(forced=False)
+                await self._maybe_idle_stop()
                 return
             spec_ms = self.cfg.speculate_after_ms
             # ">=" not "==": frames are 20 ms, so an odd setting like 250 would
             # never match exactly. _speculate() ignores repeats for the same audio.
-            if 0 < spec_ms < needed and silent_ms >= spec_ms:
+            if (
+                0 < spec_ms < needed
+                and silent_ms >= spec_ms
+                # e.g. the OpenAI engine: a speculation the speaker talks through
+                # is discarded, and there it was a paid request.
+                and getattr(self.asr, "speculates", True)
+            ):
                 self._speculate()
         else:
             self._preroll.append(frame.copy())
+            await self._maybe_idle_stop()
+            if self._idle:
+                return
 
         if (
             self._active
@@ -510,6 +559,7 @@ class StreamSession:
                     "speculated": speculated is not None,
                 }
             )
+            await self._report_usage()
             return
 
         # pipeline mode: ship the source text immediately, translate after
@@ -550,6 +600,19 @@ class StreamSession:
                 "mt_ms": round(mt.elapsed * 1000),
             }
         )
+        await self._report_usage()
+
+    async def _report_usage(self) -> None:
+        """Push the running estimate; the page shows it in the top bar."""
+        if self.usage is None:
+            return
+        snap = self.usage.snapshot()
+        await self.send({"type": "usage", **snap})
+        if self.on_usage is not None:
+            try:
+                await self.on_usage(snap)
+            except Exception:  # bookkeeping must never break a talk
+                log.exception("failed to record usage")
 
     # -- stop ---------------------------------------------------------------
 

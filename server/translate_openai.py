@@ -29,6 +29,7 @@ import httpx
 
 from .asr import AsrError
 from .translate import DIRECTIONS, MtResult, _clean, build_prompt
+from .usage import record_tokens
 
 log = logging.getLogger(__name__)
 
@@ -136,8 +137,16 @@ class OpenAITranslator:
                 "temperature": 0.0,
             },
         )
+        body = resp.json()
+        u = body.get("usage") or {}
+        record_tokens(
+            self.model,
+            u.get("prompt_tokens", 0),
+            u.get("completion_tokens", 0),
+            (u.get("prompt_tokens_details") or {}).get("cached_tokens", 0),
+        )
         try:
-            raw = resp.json()["choices"][0]["message"]["content"] or ""
+            raw = body["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, ValueError) as exc:
             raise AsrError(f"unexpected OpenAI response ({type(exc).__name__})") from exc
 
