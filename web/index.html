@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Salindia</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>" />
+<link rel="stylesheet" href="styles.css?v=13" />
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="dot" id="dot"></span>
+      <strong>Salindia</strong>
+      <span class="status" id="status" role="status">connecting…</span>
+    </div>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <main class="stage" id="stage">
+    <img class="slide" id="slide" alt="" hidden />
+    <p class="hint" id="hint">
+      <strong>Open slides</strong> to present a PDF, or just press <strong>Start listening</strong>.<br />
+      Subtitles appear at the bottom.<br />
+      <kbd>Space</kbd> / <kbd>→</kbd> next slide · <kbd>←</kbd> previous · <kbd>F</kbd> fullscreen · <kbd>T</kbd> switch language · <kbd>Shift</kbd>+<kbd>↑</kbd><kbd>↓</kbd> move subtitles
+    </p>
+    <div class="live-badge" id="liveBadge" hidden><span></span><b id="liveDir"></b></div>
+    <div class="subs" id="subs" aria-live="polite"></div>
+  </main>
+
+  <footer class="controls">
+    <button id="record" class="rec" disabled>
+      <span class="rec-icon"></span>
+      <span id="recLabel">Loading models…</span>
+    </button>
+
+    <div class="seg" role="group" aria-label="Translation direction">
+      <button data-dir="id-en" aria-pressed="true">ID → EN</button>
+      <button data-dir="en-id" aria-pressed="false">EN → ID</button>
+      <button data-dir="auto" aria-pressed="false" hidden title="Detect Indonesian or English per sentence">Auto</button>
+    </div>
+
+    <div class="meter" title="Input level — turns green while speech is detected">
+      <div class="meter-fill" id="meterFill"></div>
+      <div class="meter-thresh" id="meterThresh"></div>
+    </div>
+
+    <div class="deck">
+      <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden />
+      <button id="openSlides" class="ghost">Open slides</button>
+      <span class="deck-nav" id="deckNav" hidden>
+        <button id="prevSlide" class="ghost icon" title="Previous slide (←)">‹</button>
+        <span class="page" id="pageLabel">1 / 1</span>
+        <button id="nextSlide" class="ghost icon" title="Next slide (Space, →)">›</button>
+        <button id="fullscreen" class="ghost" title="Fullscreen (F)">Fullscreen</button>
+        <button id="closeSlides" class="ghost icon" title="Close slides">×</button>
+      </span>
+    </div>
+
+    <button id="contextBtn" class="ghost" title="Indonesian style and notes for the translator">Context</button>
+
+    <span class="subpos" title="Subtitle position (Shift+↑ / Shift+↓)">
+      Subtitles
+      <button id="subsUp" class="ghost icon" aria-label="Move subtitles up">▲</button>
+      <button id="subsDown" class="ghost icon" aria-label="Move subtitles down">▼</button>
+      <select id="subsHide" title="Hide each subtitle after this long" aria-label="Hide subtitles after">
+        <option value="2">hide 2s</option>
+        <option value="3">hide 3s</option>
+        <option value="5">hide 5s</option>
+        <option value="8">hide 8s</option>
+        <option value="10">hide 10s</option>
+        <option value="15">hide 15s</option>
+        <option value="0">never hide</option>
+      </select>
+    </span>
+
+    <div class="spacer"></div>
+    <label class="toggle"><input type="checkbox" id="showSrc" checked /> Show original text</label>
+    <label class="toggle"><input type="checkbox" id="showLat" checked /> Show latency</label>
+    <button id="copy" class="ghost">Copy</button>
+    <button id="clear" class="ghost">Clear</button>
+  </footer>
+
+  <dialog class="engine" id="engineDialog">
+    <form method="dialog" id="engineForm">
+      <h2>How should Salindia hear you?</h2>
+      <p class="sub">Pick a speech-to-text engine. Nothing is loaded until you choose.</p>
+
+      <label class="choice">
+        <input type="radio" name="engine" value="local" checked />
+        <span>
+          <b>On this Mac</b>
+          <small>Whisper <code id="localModel">large-v3-turbo</code> on the GPU. Private and free.
+          The first run downloads about 1.6&nbsp;GB.</small>
+        </span>
+      </label>
+
+      <label class="choice">
+        <input type="radio" name="engine" value="openai" />
+        <span>
+          <b>OpenAI API</b>
+          <small>Audio of each sentence is sent to OpenAI and billed per minute to your key.
+          Live preview while speaking is off to avoid paying for throwaway requests.</small>
+        </span>
+      </label>
+
+      <div class="openai-fields" id="openaiFields">
+        <label>Model
+          <select id="openaiModel"></select>
+        </label>
+        <label id="keyRow">API key
+          <input type="password" id="openaiKey" autocomplete="off" spellcheck="false" placeholder="sk-…" />
+        </label>
+        <p class="note" id="keyNote">Kept in the server's memory only. It is never written to disk or to this browser.</p>
+      </div>
+
+      <p class="note">Translation always runs locally on this Mac.</p>
+      <p class="error" id="engineError" hidden></p>
+
+      <div class="actions">
+        <button type="submit" class="rec" id="engineGo">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="engine" id="contextDialog">
+    <form method="dialog" id="contextForm">
+      <h2>Translation context</h2>
+      <p class="sub">Applies from the next sentence.</p>
+
+      <p class="note"><b>Indonesian style</b> (used when translating into Indonesian)</p>
+      <label class="choice">
+        <input type="radio" name="style" value="formal" />
+        <span><b>Formal: saya / Anda</b>
+          <small>Polite, standard Indonesian for presentations and clients.</small></span>
+      </label>
+      <label class="choice">
+        <input type="radio" name="style" value="casual" />
+        <span><b>Casual: aku / kamu</b>
+          <small>Relaxed, everyday spoken Indonesian.</small></span>
+      </label>
+      <label class="choice">
+        <input type="radio" name="style" value="match" />
+        <span><b>Match the speaker</b>
+          <small>Casual English becomes casual Indonesian, formal becomes formal.</small></span>
+      </label>
+
+      <label class="notes">Notes for the translator (both directions)
+        <textarea id="contextNotes" rows="5" maxlength="1500"
+          placeholder="e.g. Quarterly results presentation to clients. Keep 'churn' and 'runway' in English. The CEO is Pak Budi Santoso."></textarea>
+      </label>
+      <p class="note">Topic, audience, names and terms to keep. Stored in this browser and sent to the local translator only.</p>
+
+      <div class="actions">
+        <button type="button" class="ghost" id="contextCancel">Cancel</button>
+        <button type="submit" class="rec">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js?v=13"></script>
+</body>
+</html>

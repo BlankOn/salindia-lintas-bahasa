@@ -1,0 +1,243 @@
+:root {
+  --bg: #0b0d11;
+  --panel: #151a22;
+  --panel-2: #1c222c;
+  --line: #262d38;
+  --text: #e9edf2;
+  --muted: #8b95a5;
+  --accent: #4da3ff;
+  --green: #35c281;
+  --red: #ff5a52;
+  --sub-bg: rgba(0, 0, 0, 0.5);
+  --sub-text: #ffffff;
+  --sub-muted: #c9d1dc;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #eef0f3; --panel: #ffffff; --panel-2: #f0f2f5; --line: #dde2e8;
+    --text: #131720; --muted: #667085;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%; margin: 0;
+  background: var(--bg); color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+body { display: flex; flex-direction: column; }
+
+/* ---- top bar ---------------------------------------------------------- */
+.bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 10px 20px; border-bottom: 1px solid var(--line);
+  background: var(--panel); flex: 0 0 auto;
+}
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status {
+  color: var(--muted); font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding-left: 10px; border-left: 1px solid var(--line);
+}
+.status.err { color: var(--red); }
+.meta {
+  color: var(--muted); font-size: 11px; text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: 0 0 auto; }
+.dot.ready { background: var(--green); }
+.dot.live  { background: var(--red); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+/* ---- stage + subtitles ------------------------------------------------- */
+.stage {
+  flex: 1 1 auto; position: relative; overflow: hidden; min-height: 0;
+  background: var(--bg);
+}
+.stage.has-slides { background: #000; }
+.stage:fullscreen { background: #000; }
+
+/* The slide fills the stage, letterboxed; subtitles float over its bottom edge. */
+.slide {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; user-select: none; -webkit-user-drag: none;
+}
+.slide[hidden] { display: none; }
+
+.live-badge {
+  position: absolute; top: 12px; right: 14px; z-index: 2;
+  display: none; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 999px; background: rgba(0,0,0,.55);
+  color: #fff; font: 600 11px ui-monospace, Menlo, monospace;
+}
+.live-badge span { width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: pulse 1.4s infinite; }
+/* Only needed when the top bar isn't visible. */
+.stage:fullscreen .live-badge:not([hidden]) { display: flex; }
+.hint {
+  position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+  margin: 0; width: min(560px, calc(100% - 32px));
+  text-align: center; color: var(--muted); line-height: 1.8;
+}
+.hint.gone { display: none; }
+kbd {
+  font: 12px ui-monospace, Menlo, monospace; padding: 1px 6px;
+  border: 1px solid var(--line); border-radius: 4px; background: var(--panel-2);
+}
+
+/* --subs-pos is the gap below the subtitles, in % of the stage height
+   (set from app.js, adjustable with the ▲ ▼ buttons / Shift+↑↓). */
+.subs {
+  position: absolute; left: 50%; bottom: calc(var(--subs-pos, 4) * 1%);
+  transform: translateX(-50%); z-index: 1;
+  transition: bottom .15s ease-out, opacity .4s ease-out;
+  width: min(1100px, calc(100% - 32px));
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  pointer-events: none;
+}
+.stage:fullscreen .subs { width: min(1400px, calc(100% - 64px)); }
+.cue {
+  max-width: 100%; text-align: center;
+  background: var(--sub-bg); color: var(--sub-text);
+  border-radius: 8px; padding: 6px 16px 8px;
+  /* The lighter backdrop lets bright slides through; the shadow keeps text legible. */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.cue.enter { animation: cue-in .18s ease-out; }
+@keyframes cue-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+
+.cue .src {
+  color: var(--sub-muted); font-size: clamp(12px, 1.3vw, 16px);
+  margin-bottom: 2px;
+}
+.cue .src.live { font-style: italic; }
+.cue .dst {
+  font-size: clamp(18px, 2.5vw, 32px); font-weight: 600; line-height: 1.3;
+  text-wrap: balance;
+}
+.cue .dst.pending { color: var(--sub-muted); font-weight: 400; }
+.cue .dst.pending::after { content: "…"; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .2 } }
+.cue .lat {
+  margin-top: 4px; font-size: 11px; color: var(--sub-muted); opacity: .75;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.cue .tag {
+  display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 3px;
+  font-size: 10px; font-weight: 700; letter-spacing: .04em; vertical-align: 2px;
+  background: rgba(255,255,255,.14); font-style: normal;
+}
+
+body.hide-src .cue .src { display: none; }
+body.hide-lat .cue .lat { display: none; }
+
+/* ---- controls ------------------------------------------------------------ */
+.controls {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 20px; border-top: 1px solid var(--line);
+  background: var(--panel); flex: 0 0 auto;
+}
+.spacer { flex: 1 1 auto; }
+
+button { font: inherit; cursor: pointer; border-radius: 8px; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+
+.rec {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 18px; border: none; color: #fff; background: var(--accent); font-weight: 600;
+}
+.rec.live { background: var(--red); }
+.rec-icon { width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+.rec.live .rec-icon { border-radius: 2px; }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button {
+  border: none; border-radius: 0; padding: 7px 12px;
+  background: var(--panel-2); color: var(--muted); font-weight: 600; font-size: 13px;
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[hidden] { display: none; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+.ghost { padding: 7px 11px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); }
+.ghost:hover:not(:disabled) { background: var(--line); }
+.ghost.icon { padding: 5px 10px; font-size: 16px; line-height: 1; }
+
+.subpos { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 13px; }
+.subpos .ghost.icon { padding: 4px 8px; font-size: 12px; }
+.subpos select {
+  font: 12px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: var(--text);
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px;
+}
+/* Auto-hide: the subtitle fades out, and reappears with the next sentence. */
+.subs.faded { opacity: 0; }
+
+.deck, .deck-nav { display: inline-flex; align-items: center; gap: 6px; }
+.deck-nav[hidden] { display: none; }
+.page {
+  min-width: 64px; text-align: center; color: var(--muted);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.toggle { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+@media (max-width: 1360px) { .meter { display: none; } }
+
+.meter { position: relative; width: 72px; height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.meter-fill { height: 100%; width: 0; background: var(--muted); transition: width .07s linear; }
+.meter-fill.speaking { background: var(--green); }
+.meter-thresh { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); opacity: .65; left: 0; }
+
+@media (max-width: 700px) {
+  .bar, .controls { padding: 8px 16px; }
+  .meta, .meter { display: none; }
+}
+
+/* ---- engine chooser ------------------------------------------------------- */
+dialog.engine {
+  width: min(520px, calc(100% - 32px)); padding: 0;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: var(--panel); color: var(--text);
+  box-shadow: 0 20px 60px rgba(0,0,0,.45);
+}
+dialog.engine::backdrop { background: rgba(0,0,0,.55); }
+dialog.engine form { padding: 22px 24px 20px; display: flex; flex-direction: column; gap: 12px; }
+dialog.engine h2 { margin: 0; font-size: 18px; }
+dialog.engine .sub { margin: -6px 0 4px; color: var(--muted); font-size: 13px; }
+
+.choice {
+  display: flex; gap: 12px; align-items: flex-start; cursor: pointer;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2);
+}
+.choice:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.choice input { margin-top: 3px; accent-color: var(--accent); }
+.choice b { display: block; margin-bottom: 2px; }
+.choice small { color: var(--muted); font-size: 12.5px; line-height: 1.45; display: block; }
+.choice code { font-size: 11.5px; }
+
+.openai-fields { display: flex; flex-direction: column; gap: 8px; padding: 2px 2px 0 38px; }
+.openai-fields[hidden] { display: none; }
+.openai-fields label[hidden] { display: none; }
+.openai-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.openai-fields input, .openai-fields select {
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px;
+}
+.note { margin: 0; font-size: 12px; color: var(--muted); }
+.error { margin: 0; font-size: 13px; color: var(--red); }
+.error[hidden] { display: none; }
+.actions { display: flex; justify-content: flex-end; margin-top: 4px; }
+
+/* ---- context dialog ------------------------------------------------------- */
+dialog .notes { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); margin-top: 4px; }
+dialog textarea {
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  resize: vertical; min-height: 90px;
+}
+dialog .actions { gap: 8px; }
+#contextBtn.active { border-color: var(--accent); color: var(--accent); }
