@@ -49,3 +49,11 @@ direction, and press **Start listening**. Use **Show original text** and
 **Show latency** to choose what each subtitle shows.
 
 Copy `.env.example` to `.env` to change anything.
+
+
+---
+
+License: MIT
+
+> **Note:** This project has been developed with assistance from LLMs. The maintainers remain responsible for reviewing, testing, and maintaining the code.
+
