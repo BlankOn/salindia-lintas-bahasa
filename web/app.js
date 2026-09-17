@@ -5,7 +5,7 @@ const CYCLE = ["id-en", "en-id", "auto"]; // order the T key steps through
 const $ = (id) => document.getElementById(id);
 const el = {
   dot: $("dot"), status: $("status"), brand: $("brand"), cost: $("cost"),
-  hint: $("hint"), subs: $("subs"),
+  hint: $("hint"), tip: $("tip"), subs: $("subs"),
   record: $("record"), recLabel: $("recLabel"),
   meterFill: $("meterFill"), meterThresh: $("meterThresh"),
   debug: $("debug"),
@@ -146,7 +146,9 @@ function updateWaiting() {
 }
 
 function render() {
-  el.hint.classList.toggle("gone", cues.size > 0 || !!deck);
+  const idle = cues.size === 0 && !deck;
+  el.hint.classList.toggle("gone", !idle);
+  el.tip.classList.toggle("gone", !idle);
   const ids = currentCue();
   const sig = JSON.stringify(ids.map((id) => {
     const c = cues.get(id);
@@ -567,24 +569,23 @@ function chosenEngine() {
   return el.engineForm.querySelector('input[name="engine"]:checked')?.value || "openai";
 }
 
-// Which mode this choice will land in, said before it happens: with OpenAI and
-// whisper-1 the server goes direct on its own, which is ID -> EN only, and
-// finding that out from a greyed-out EN → ID button afterwards is worse.
-function plannedMode(choice, model) {
-  if (engine.mode_is_explicit) return engine.env_mode || "pipeline";
-  return choice === "openai" && model === "whisper-1" ? "direct" : "pipeline";
+// Which mode this choice will land in, said before it happens. Whatever the
+// engine, that is the server's MODE -- pipeline unless its environment says
+// otherwise -- so the note only has to say which one that is.
+function plannedMode() {
+  return engine.env_mode || "pipeline";
 }
 
 function syncEngineFields() {
   const choice = chosenEngine();
   el.openaiFields.hidden = choice !== "openai";
-  const mode = plannedMode(choice, el.openaiModel.value);
   el.modeNote.hidden = choice !== "openai";
-  el.modeNote.textContent = mode === "direct"
-    ? "whisper-1 translates in the same pass, so this starts in direct mode: "
-      + "ID → EN only, and cheaper. Switch to pipeline in the top bar for EN → ID."
+  el.modeNote.textContent = plannedMode() === "direct"
+    ? "Starts in direct mode: one Whisper pass straight to English, "
+      + "ID → EN only. Switch to pipeline in the top bar for EN → ID."
     : "Starts in pipeline mode: transcribe, then translate with "
-      + "a chat model. Both directions.";
+      + "a chat model. Both directions. Direct is in the top bar: "
+      + "whisper-1 translates in the same pass there, cheaper and ID → EN only.";
 }
 
 function openEngineDialog() {

@@ -16,7 +16,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from server.asr import AsrResult, _looks_hallucinated
 from server.config import SAMPLE_RATE, Settings
 from server.session import StreamSession
-from server.translate import MtResult
+from server.translate import MtResult, _clean as _clean_mt
 
 rng = np.random.default_rng(0)
 SILENCE_TAIL = Settings().silence_ms / 1000  # trailing silence kept in a final
@@ -402,6 +402,36 @@ async def main():
           _looks_hallucinated("Thank you.", 0.5, -0.4))
     check("drops Amara caption credit",
           _looks_hallucinated("Subtitles by the Amara.org community", 0.1, -0.3))
+    # The boilerplate arrives in endless variations, so these are matched by
+    # shape against the whole utterance rather than listed one by one.
+    check("drops \'Don\'t forget to subscribe\'",
+          _looks_hallucinated("Don't forget to subscribe!", 0.2, -0.3))
+    check("drops 'like and subscribe'",
+          _looks_hallucinated("Please like and subscribe to my channel.", 0.2, -0.3))
+    check("drops the Indonesian sign-off",
+          _looks_hallucinated("Jangan lupa subscribe ya", 0.2, -0.3))
+    check("drops 'see you in the next video'",
+          _looks_hallucinated("See you in the next video!", 0.2, -0.3))
+    check("keeps a talk that really mentions subscribing",
+          not _looks_hallucinated(
+              "You can subscribe to the mailing list after the talk", 0.05, -0.25))
+
+    # --- chatbot replies from the translator --------------------------------
+    print("\ncase: meta reply filter")
+    check("drops an Indonesian refusal",
+          _clean_mt("Saya tidak dapat menerjemahkan itu.") == "")
+    check("drops an English refusal",
+          _clean_mt("Sorry, I can't translate that without more context.") == "")
+    check("drops a request for clarification",
+          _clean_mt("Could you please provide the text to translate?") == "")
+    check("drops a complaint about the input",
+          _clean_mt("It seems there is no input to translate.") == "")
+    check("keeps a sentence that is about translating",
+          _clean_mt("Saya akan menerjemahkan pidato ini untuk Anda")
+          == "Saya akan menerjemahkan pidato ini untuk Anda")
+    check("strips a label prefix rather than dropping the line",
+          _clean_mt("English: the meeting starts at nine.")
+          == "the meeting starts at nine.")
 
     print("\n" + ("ALL PASS" if ok else "FAILURES PRESENT"))
     return 0 if ok else 1

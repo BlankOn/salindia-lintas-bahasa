@@ -1,0 +1,62 @@
+# Example deployment. Copy .env.example to .env, set OPENAI_API_KEY and
+# ACCESS_PASSPHRASE, then:
+#
+#   docker compose up -d --build
+#
+# ./data is created and chowned for you on first start (the entrypoint does it
+# as root, then drops to the app's uid), so there is no chown to remember.
+#
+# Traefik reaches it by container name on a shared network, the way
+# workspace-webhooks and discourse are reached -- so nothing is published on the
+# host. The router for slide.opensuse.id is https-only: microphone capture needs
+# a secure context, so a page served over plain http loads and then cannot hear
+# anything.
+
+services:
+  salindia:
+    build: .
+    # The hostname Traefik's service url points at (http://salindia:8000).
+    container_name: salindia
+    hostname: salindia
+    image: salindia:latest
+    restart: unless-stopped
+
+    # Everything the app reads is an environment variable, so .env works the
+    # same here as it does for ./run.sh.
+    env_file: .env
+    environment:
+      # A container has no Metal GPU: the OpenAI engine is the only one that
+      # can run, so skip the chooser rather than offering a dead option.
+      FORCE_APPROACH: openai
+      # The default, spelled out: transcribe, then translate with the chat
+      # model, both directions. MODE=direct instead lets whisper-1 translate in
+      # the same pass -- cheaper and a beat faster, but ID -> EN only.
+      MODE: pipeline
+      # Every interface inside the container; the network it joins is what
+      # decides who can reach it.
+      HOST: 0.0.0.0
+      PORT: "8000"
+      DB_PATH: /data/salindia.sqlite3
+
+    # The sqlite file lives on the host, so `docker compose down` and the next
+    # image build both leave the talk records alone. A directory, not the file
+    # itself: SQLite in WAL mode writes -wal and -shm siblings, and a
+    # single-file bind mount cannot grow them.
+    volumes:
+      - ./data:/data
+
+    networks:
+      - traefik
+
+    # No `ports:` on purpose. Publishing to the host would put an http-only
+    # copy of the app beside the https one, and Docker's published ports bypass
+    # the host firewall. Uncomment for a local look without Traefik:
+    # ports:
+    #   - "127.0.0.1:8000:8000"
+
+# The network Traefik is already on. Check the name before deploying:
+#   docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' traefik
+networks:
+  traefik:
+    external: true
+    name: traefik

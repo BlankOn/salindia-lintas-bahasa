@@ -51,6 +51,35 @@ direction, and press **Start listening**. Use **Show original text** and
 Copy `.env.example` to `.env` to change anything.
 
 
+## Deploying it
+
+`Dockerfile` and `docker-compose.yml` are for a server, which means the OpenAI
+engine: MLX is Apple-Silicon only, so the local models cannot run in a
+container. The image installs no MLX wheels (the requirements are marked for
+macOS and the imports are lazy) and the compose file sets
+`FORCE_APPROACH=openai`, so the browser never offers an engine that would fail.
+
+```bash
+cp .env.example .env            # set OPENAI_API_KEY and ACCESS_PASSPHRASE
+docker compose up -d --build
+```
+
+The talk records are a SQLite file on the host, mounted at `/data` — a
+directory rather than the file itself, because WAL mode writes `-wal` and
+`-shm` siblings next to it. Rebuilding the image leaves them alone. The
+directory is created and chowned on first start, so a `./data` that Docker made
+as root still works; uvicorn itself runs as an unprivileged uid either way.
+
+Nothing else needs a volume: with the OpenAI engine no weights are downloaded,
+so a restart re-downloads nothing. The local MLX models are the only thing that
+would need a cache, and they cannot run in a container at all.
+
+Nothing is published on the host: the container joins the reverse proxy's
+network and is reached by name (`http://salindia:8000`). TLS is not optional in
+front of it — microphone capture needs a secure context, so browsers refuse it
+over plain http on anything but localhost.
+
+
 ---
 
 License: MIT

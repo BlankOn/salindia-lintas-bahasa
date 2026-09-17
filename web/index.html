@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Salindia</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>" />
-<link rel="stylesheet" href="styles.css?v=44" />
+<link rel="stylesheet" href="styles.css?v=49" />
 </head>
 <body>
   <header class="bar">
@@ -21,7 +21,11 @@
 
     <!-- Speech and translation live together up here; the footer is for the
          presentation itself. Model names moved to the brand's tooltip. -->
-    <div class="bar-controls">
+    <!-- One control, stacked: the level meter belongs to the button above it,
+         so it sits under it and matches its width. A middle column of its own,
+         so the thing every talk starts with is in the centre of the bar
+         rather than lost in the row of settings on the right. -->
+    <div class="rec-stack">
       <button id="record" class="rec" disabled>
         <span class="rec-icon"></span>
         <span id="recLabel">Loading models…</span>
@@ -31,7 +35,9 @@
         <div class="meter-fill" id="meterFill"></div>
         <div class="meter-thresh" id="meterThresh"></div>
       </div>
+    </div>
 
+    <div class="bar-controls">
       <div class="seg" role="group" aria-label="Translation direction">
         <button data-dir="en-id" aria-pressed="true">EN → ID</button>
         <button data-dir="id-en" aria-pressed="false">ID → EN</button>
@@ -58,6 +64,17 @@
       <strong>Open slides</strong> to present a PDF, or just press <strong>Start listening</strong>.<br />
       Subtitles appear at the bottom.<br />
       <kbd>Space</kbd> / <kbd>→</kbd> next slide · <kbd>←</kbd> previous · <kbd>F</kbd> fullscreen · <kbd>T</kbd> switch language · <kbd>Shift</kbd>+<kbd>↑</kbd><kbd>↓</kbd> move subtitles
+    </p>
+
+    <!-- Sits under the hint and disappears with it (app.js toggles .gone on
+         both), because it is setup advice: once the talk starts the stage
+         belongs to the slides. -->
+    <p class="hint tip" id="tip">
+      <strong>Tip:</strong> wear a headset mic — earbuds, AirPods or any TWS —
+      paired with your laptop, rather than speaking into its built-in mic. A mic
+      at your mouth picks up your voice and little of the room, so the
+      translation stays accurate even with applause, questions or the PA system
+      in the background.
     </p>
     <!-- Progress lives in the corner, never over the slides: during a talk the
          stage belongs to the presenter. -->
@@ -233,6 +250,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=44"></script>
+  <script src="app.js?v=49"></script>
 </body>
 </html>

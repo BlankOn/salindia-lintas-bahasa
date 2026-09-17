@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from .asr import AsrError, WhisperEngine
 from .asr_openai import MODELS as OPENAI_MODELS
 from .asr_openai import OpenAIWhisperEngine
-from .config import MODE_IS_EXPLICIT, MODES, Settings, settings
+from .config import MODES, Settings, settings
 from .gpu import GpuGate
 from .session import StreamSession
 from .translate import Translator
@@ -111,8 +111,7 @@ class State:
             "mt_models": {d: t.repo for d, t in self.translators.items()},
             "mode": self.mode,
             "mode_options": self.mode_options(),
-            # So the chooser can say which mode a given engine would land in.
-            "mode_is_explicit": MODE_IS_EXPLICIT,
+            # So the chooser can say which mode the engine will land in.
             "env_mode": settings.mode,
         }
 
@@ -228,20 +227,18 @@ def _build_translators(engine: str, api_key: str = "") -> None:
         log.info("translator %s: %s", direction, t.repo)
 
 
-def preferred_mode(engine: str, model: str = "") -> str:
-    """Where a freshly chosen engine should start.
+def preferred_mode() -> str:
+    """Where a freshly chosen engine should start: whatever MODE says.
 
-    The OpenAI engine goes direct when it can: ``/audio/translations`` does
-    speech and translation in the one Whisper pass, which is both faster and
-    cheaper than transcribing and then paying a chat model to translate. It only
-    ever outputs English, so this costs en-id -- switchable in the bar. An
-    explicit MODE= in the environment always wins.
+    Every engine starts in MODE (pipeline unless the environment says
+    otherwise). The OpenAI engine used to go direct for itself when the model
+    allowed it -- ``/audio/translations`` does speech and translation in one
+    Whisper pass, cheaper and a beat faster -- but it only ever outputs
+    English, so a page loaded that way could not do en-id until someone found
+    the mode dropdown. Direct is still a click away in the bar; it is no longer
+    what a fresh page lands in.
     """
-    if MODE_IS_EXPLICIT or engine != "openai":
-        return settings.mode
-    # /audio/translations exists for whisper-1 alone; the gpt-*-transcribe
-    # models can only transcribe, so they stay on the pipeline.
-    return "direct" if (model or settings.openai_asr_model) == "whisper-1" else "pipeline"
+    return settings.mode
 
 
 async def _drop_engine() -> None:
@@ -294,9 +291,7 @@ async def lifespan(app: FastAPI):
     log.info("mode=%s", state.mode)
     if settings.force_approach:
         try:
-            start_engine(
-                settings.force_approach, mode=preferred_mode(settings.force_approach)
-            )
+            start_engine(settings.force_approach, mode=preferred_mode())
             log.info("FORCE_APPROACH=%s: skipping the chooser", settings.force_approach)
         except AsrError as exc:
             state.error = str(exc)
@@ -431,7 +426,7 @@ async def choose_engine(request: Request) -> JSONResponse:
             engine,
             api_key=(body.get("api_key") or "").strip(),
             model=model,
-            mode=preferred_mode(engine, model),
+            mode=preferred_mode(),
         )
     except AsrError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -1,0 +1,19 @@
+.git
+.gitignore
+.venv
+.claude
+__pycache__
+**/__pycache__
+*.pyc
+# Secrets and local state stay on the host: the compose file passes .env in at
+# run time, and the database comes from a mounted volume.
+.env
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+data/
+tests/
+DESIGN.md
+Dockerfile
+docker-compose.yml
+.DS_Store

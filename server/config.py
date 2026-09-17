@@ -182,10 +182,6 @@ class Settings:
 
 settings = Settings()
 
-# Whether MODE was chosen, as opposed to falling out of the default. The OpenAI
-# engine prefers direct mode on its own, but never over an explicit MODE=.
-MODE_IS_EXPLICIT = bool(os.environ.get("MODE"))
-
 if settings.mode not in MODES:
     raise SystemExit(f"MODE must be 'pipeline' or 'direct', got {settings.mode!r}")
 if settings.id_style not in ("formal", "casual", "match"):

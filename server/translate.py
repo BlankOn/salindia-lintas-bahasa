@@ -200,7 +200,11 @@ _META_SUBJECT = re.compile(
     # Indonesian stems are matched without word boundaries on purpose: affixes
     # (di-, me-, -nya, -kan) mean "diterjemahkan" and "konteksnya" would slip
     # past a \b. Those stems are distinctive enough to be safe bare.
-    r"(?:terjemah|konteks|kalimat)"
+    #
+    # [nt]erjemah, not terjemah: me- assimilates the t away, so the refusal
+    # everyone actually sees -- "saya tidak dapat menerjemahkan itu" -- has
+    # "nerjemah" in it and nothing else does.
+    r"(?:[nt]erjemah|konteks|kalimat)"
     r"|\b(?:translat\w*|context|input|the\s+text|your\s+(?:text|message|input)|"
     r"language\s+model|ai\s+(?:assistant|model)|asisten)\b",
     re.IGNORECASE,

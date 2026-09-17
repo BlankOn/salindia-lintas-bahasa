@@ -26,17 +26,30 @@ log = logging.getLogger(__name__)
 #
 # Caption boilerplate nobody says into a live interpreter: always dropped.
 _ALWAYS_HALLUCINATED = {
-    "terima kasih telah menonton",
-    "terima kasih telah menonton video ini",
-    "sampai jumpa di video selanjutnya",
-    "jangan lupa like dan subscribe",
-    "thank you for watching",
-    "thanks for watching",
-    "please subscribe",
     "subtitles by the amaraorg community",
     "subtitle by",
     "you",
 }
+# The same boilerplate, which Whisper emits in endless small variations -- "don't
+# forget to subscribe", "like and subscribe", "thanks for watching this video".
+# Matched against the whole utterance, not searched inside it: the hallucination
+# is the entire output, so a talk that genuinely mentions subscribing to
+# something keeps its sentence.
+_ALWAYS_HALLUCINATED_SHAPES = re.compile(
+    r"""
+      (?:please\s+)?(?:dont\s+forget\s+to\s+)?(?:hit\s+|click\s+)?
+        (?:like\s+(?:and|dan)\s+)?subscribe
+        (?:\s+(?:to|ke)\s+(?:my|our|the)\s+channel)?(?:\s+ya)?
+    | jangan\s+lupa\s+(?:untuk\s+)?(?:like\s+(?:dan|and)\s+)?(?:subscribe|berlangganan)
+        (?:\s+ya)?
+    | (?:thank\s+you|thanks)\s+(?:so\s+much\s+|very\s+much\s+)?for\s+watching
+        (?:\s+this\s+video)?
+    | terima\s+kasih\s+(?:telah|sudah|udah)\s+menonton(?:\s+video\s+ini)?
+    | (?:ill\s+)?see\s+you\s+(?:in|on)\s+the\s+next\s+video
+    | sampai\s+jumpa\s+di\s+video\s+(?:selanjutnya|berikutnya)
+    """,
+    re.VERBOSE,
+)
 # Short phrases people genuinely say ("Thank you." ends many English turns), so
 # they are only dropped when Whisper itself doubts there was speech at all.
 _SUSPECT_IF_UNSURE = {
@@ -81,7 +94,10 @@ def _looks_hallucinated(text: str, no_speech: float, logprob: float) -> bool:
     if not text:
         return True
     normalised = re.sub(r"[^\w\s]", "", text.lower()).strip()
+    normalised = re.sub(r"\s+", " ", normalised)
     if normalised in _ALWAYS_HALLUCINATED:
+        return True
+    if _ALWAYS_HALLUCINATED_SHAPES.fullmatch(normalised):
         return True
     if normalised in _SUSPECT_IF_UNSURE and no_speech > _SUSPECT_NO_SPEECH:
         return True
