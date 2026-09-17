@@ -5,10 +5,98 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Salindia</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>" />
-<link rel="stylesheet" href="styles.css?v=52" />
+<link rel="stylesheet" href="styles.css?v=60" />
 </head>
 <body>
-  <header class="bar">
+  <header class="controls">
+    <div class="deck">
+      <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden />
+      <button id="openSlides" class="ghost">Open slides</button>
+      <span class="deck-nav" id="deckNav" hidden>
+        <button id="prevSlide" class="ghost icon" title="Previous slide (←)">‹</button>
+        <span class="page" id="pageLabel">1 / 1</span>
+        <button id="nextSlide" class="ghost icon" title="Next slide (Space, →)">›</button>
+        <button id="closeSlides" class="ghost icon" title="Close slides">×</button>
+      </span>
+    </div>
+
+    <button id="fullscreen" class="ghost fs" title="Fullscreen (F)">Fullscreen</button>
+
+    <span class="group" role="group" aria-label="Subtitles">
+      <span class="subpos" title="Subtitle position (Shift+↑ / Shift+↓)">
+        Subtitles
+        <button id="subsUp" class="ghost icon" aria-label="Move subtitles up">▲</button>
+        <button id="subsDown" class="ghost icon" aria-label="Move subtitles down">▼</button>
+      </span>
+      <select id="subsHide" title="Hide each subtitle after this long" aria-label="Hide subtitles after">
+        <option value="2">hide 2s</option>
+        <option value="3">hide 3s</option>
+        <option value="5">hide 5s</option>
+        <option value="8">hide 8s</option>
+        <option value="10">hide 10s</option>
+        <option value="15">hide 15s</option>
+        <option value="0">never hide</option>
+      </select>
+    </span>
+  </header>
+
+  <main class="stage" id="stage">
+    <canvas class="slide" id="slide" hidden aria-label="Current slide"></canvas>
+    <p class="hint" id="hint">
+      <strong>Open slides</strong> to present a PDF, or just press <strong>Start listening</strong>.<br />
+      Subtitles appear at the bottom.<br />
+      Click the slide or <kbd>Space</kbd> / <kbd>→</kbd> for the next one · right-click or <kbd>←</kbd> to go back · <kbd>F</kbd> fullscreen · <kbd>T</kbd> switch language · <kbd>Shift</kbd>+<kbd>↑</kbd><kbd>↓</kbd> move subtitles
+    </p>
+
+    <!-- Sits under the hint and disappears with it (app.js toggles .gone on
+         both), because it is setup advice: once the talk starts the stage
+         belongs to the slides. -->
+    <p class="hint tip" id="tip">
+      <strong>Tip:</strong> wear a headset mic — earbuds, AirPods or any TWS —
+      paired with your laptop, rather than speaking into its built-in mic. A mic
+      at your mouth picks up your voice and little of the room, so the
+      translation stays accurate even with applause, questions or the PA system
+      in the background.
+    </p>
+
+    <p class="hint tip note" id="note">
+      <strong>Note:</strong> this is machine translation, so it will not be
+      perfect — expect the odd sentence to come out wrong. Say so to your
+      audience at the start: told to read the subtitles for the gist rather
+      than the wording, they will follow along happily. Imperfect subtitles
+      still beat none at all.
+    </p>
+    <!-- Progress lives in the corner, never over the slides: during a talk the
+         stage belongs to the presenter. -->
+    <div class="work" id="work" hidden role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="workTitle"></span>
+    </div>
+    <!-- Fullscreen has no top bar, so this is the only direction control on a
+         projector. Collapsed it is a dot and a label; hovering (or tabbing into
+         it) grows it into the switch itself. -->
+    <!-- tabindex so the keyboard can open it too: the buttons inside are
+         display:none until it expands, and nothing can focus its way into that. -->
+    <div class="live-badge" id="liveBadge" hidden tabindex="0"
+         title="Translation direction — click to switch">
+      <span class="live-dot" aria-hidden="true"></span>
+      <b id="liveDir"></b>
+      <span class="live-seg" role="group" aria-label="Translation direction">
+        <button type="button" data-dir="en-id" aria-pressed="false">EN → ID</button>
+        <button type="button" data-dir="id-en" aria-pressed="false">ID → EN</button>
+        <button type="button" data-dir="auto" aria-pressed="false" hidden>Auto</button>
+      </span>
+    </div>
+    <!-- Shown while listening with nothing on screen: all three dots are always
+         there, only their colour travels, so it reads as waiting rather than
+         loading. aria-hidden because it says nothing a screen reader needs. -->
+    <div class="waiting" id="waiting" hidden aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
+    <div class="subs" id="subs" aria-live="polite"></div>
+  </main>
+
+  <footer class="bar">
     <div class="brand" id="brand">
       <span class="dot" id="dot"></span>
       <strong>Salindia</strong>
@@ -56,86 +144,6 @@
         <input type="checkbox" id="debug" /> Enable debug mode
       </label>
     </div>
-  </header>
-
-  <main class="stage" id="stage">
-    <canvas class="slide" id="slide" hidden aria-label="Current slide"></canvas>
-    <p class="hint" id="hint">
-      <strong>Open slides</strong> to present a PDF, or just press <strong>Start listening</strong>.<br />
-      Subtitles appear at the bottom.<br />
-      Click the slide or <kbd>Space</kbd> / <kbd>→</kbd> for the next one · right-click or <kbd>←</kbd> to go back · <kbd>F</kbd> fullscreen · <kbd>T</kbd> switch language · <kbd>Shift</kbd>+<kbd>↑</kbd><kbd>↓</kbd> move subtitles
-    </p>
-
-    <!-- Sits under the hint and disappears with it (app.js toggles .gone on
-         both), because it is setup advice: once the talk starts the stage
-         belongs to the slides. -->
-    <p class="hint tip" id="tip">
-      <strong>Tip:</strong> wear a headset mic — earbuds, AirPods or any TWS —
-      paired with your laptop, rather than speaking into its built-in mic. A mic
-      at your mouth picks up your voice and little of the room, so the
-      translation stays accurate even with applause, questions or the PA system
-      in the background.
-    </p>
-    <!-- Progress lives in the corner, never over the slides: during a talk the
-         stage belongs to the presenter. -->
-    <div class="work" id="work" hidden role="status">
-      <span class="spinner" aria-hidden="true"></span>
-      <span id="workTitle"></span>
-    </div>
-    <!-- Fullscreen has no top bar, so this is the only direction control on a
-         projector. Collapsed it is a dot and a label; hovering (or tabbing into
-         it) grows it into the switch itself. -->
-    <!-- tabindex so the keyboard can open it too: the buttons inside are
-         display:none until it expands, and nothing can focus its way into that. -->
-    <div class="live-badge" id="liveBadge" hidden tabindex="0"
-         title="Translation direction — click to switch">
-      <span class="live-dot" aria-hidden="true"></span>
-      <b id="liveDir"></b>
-      <span class="live-seg" role="group" aria-label="Translation direction">
-        <button type="button" data-dir="en-id" aria-pressed="false">EN → ID</button>
-        <button type="button" data-dir="id-en" aria-pressed="false">ID → EN</button>
-        <button type="button" data-dir="auto" aria-pressed="false" hidden>Auto</button>
-      </span>
-    </div>
-    <!-- Shown while listening with nothing on screen: all three dots are always
-         there, only their colour travels, so it reads as waiting rather than
-         loading. aria-hidden because it says nothing a screen reader needs. -->
-    <div class="waiting" id="waiting" hidden aria-hidden="true">
-      <span></span><span></span><span></span>
-    </div>
-    <div class="subs" id="subs" aria-live="polite"></div>
-  </main>
-
-  <footer class="controls">
-    <div class="deck">
-      <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden />
-      <button id="openSlides" class="ghost">Open slides</button>
-      <span class="deck-nav" id="deckNav" hidden>
-        <button id="prevSlide" class="ghost icon" title="Previous slide (←)">‹</button>
-        <span class="page" id="pageLabel">1 / 1</span>
-        <button id="nextSlide" class="ghost icon" title="Next slide (Space, →)">›</button>
-        <button id="closeSlides" class="ghost icon" title="Close slides">×</button>
-      </span>
-    </div>
-
-    <button id="fullscreen" class="ghost fs" title="Fullscreen (F)">Fullscreen</button>
-
-    <span class="group" role="group" aria-label="Subtitles">
-      <span class="subpos" title="Subtitle position (Shift+↑ / Shift+↓)">
-        Subtitles
-        <button id="subsUp" class="ghost icon" aria-label="Move subtitles up">▲</button>
-        <button id="subsDown" class="ghost icon" aria-label="Move subtitles down">▼</button>
-      </span>
-      <select id="subsHide" title="Hide each subtitle after this long" aria-label="Hide subtitles after">
-        <option value="2">hide 2s</option>
-        <option value="3">hide 3s</option>
-        <option value="5">hide 5s</option>
-        <option value="8">hide 8s</option>
-        <option value="10">hide 10s</option>
-        <option value="15">hide 15s</option>
-        <option value="0">never hide</option>
-      </select>
-    </span>
   </footer>
 
   <dialog class="engine" id="engineDialog">
@@ -250,6 +258,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=52"></script>
+  <script src="app.js?v=60"></script>
 </body>
 </html>

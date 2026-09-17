@@ -5,7 +5,7 @@ const CYCLE = ["id-en", "en-id", "auto"]; // order the T key steps through
 const $ = (id) => document.getElementById(id);
 const el = {
   dot: $("dot"), status: $("status"), brand: $("brand"), cost: $("cost"),
-  hint: $("hint"), tip: $("tip"), subs: $("subs"),
+  hint: $("hint"), tip: $("tip"), note: $("note"), subs: $("subs"),
   record: $("record"), recLabel: $("recLabel"),
   meterFill: $("meterFill"), meterThresh: $("meterThresh"),
   debug: $("debug"),
@@ -147,8 +147,7 @@ function updateWaiting() {
 
 function render() {
   const idle = cues.size === 0 && !deck;
-  el.hint.classList.toggle("gone", !idle);
-  el.tip.classList.toggle("gone", !idle);
+  for (const p of [el.hint, el.tip, el.note]) p.classList.toggle("gone", !idle);
   const ids = currentCue();
   const sig = JSON.stringify(ids.map((id) => {
     const c = cues.get(id);
