@@ -16,6 +16,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from typing import Callable
 
 from .gpu import URGENT, GpuGate
 
@@ -208,11 +209,19 @@ class Translator:
         self.last_prompt_tokens = 0
         self.last_cached_tokens = 0
         # Translators share one pool, and every model shares the GPU gate.
+        # Called from the worker thread with a short label for each slow step of
+        # the first load. main.py points this at the state the page polls;
+        # unset it is a no-op, so the class stays usable on its own.
+        self.on_stage: Callable[[str], None] | None = None
         self._owns_pool = pool is None
         self._pool = pool or ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt")
         self.gate = gate or GpuGate()
 
     # -- blocking side ------------------------------------------------------
+
+    def _stage(self, label: str) -> None:
+        if self.on_stage is not None:
+            self.on_stage(label)
 
     def _load(self) -> None:
         if self._model is not None:
@@ -220,9 +229,13 @@ class Translator:
         from mlx_lm import load
 
         log.info("loading translation model %s...", self.repo)
+        self._stage("Downloading and preparing model…")
         started = time.perf_counter()
         self._model, self._tokenizer = load(self.repo)
         log.info("translator ready in %.1fs", time.perf_counter() - started)
+        # Weights are in memory, but the caller still has a warmup sentence to
+        # generate -- minutes on a CPU backend. Stop saying "downloading".
+        self._stage("Warming up…")
 
     def _reset_cache(self, direction: str) -> None:
         from mlx_lm.models.cache import make_prompt_cache

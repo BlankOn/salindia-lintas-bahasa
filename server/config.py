@@ -39,6 +39,10 @@ class Settings:
     openai_api_key: str = field(default=_s("OPENAI_API_KEY", ""), repr=False)
     openai_base_url: str = _s("OPENAI_BASE_URL", "https://api.openai.com/v1")
     openai_asr_model: str = _s("OPENAI_ASR_MODEL", "whisper-1")
+    # Chat model used for translation when the speech engine is OpenAI. Keeps
+    # the whole pipeline off the local GPU, which is the only way MODE=pipeline
+    # runs anywhere but Apple Silicon.
+    openai_mt_model: str = _s("OPENAI_MT_MODEL", "gpt-4o-mini")
     # Live partials cost one API request per refresh, so they're off by default.
     openai_partials: bool = _s("OPENAI_PARTIALS", "0") not in ("", "0", "false", "no")
 

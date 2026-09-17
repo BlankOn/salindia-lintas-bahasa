@@ -4,7 +4,7 @@ const CYCLE = ["id-en", "en-id", "auto"]; // order the T key steps through
 
 const $ = (id) => document.getElementById(id);
 const el = {
-  dot: $("dot"), status: $("status"), meta: $("meta"), hint: $("hint"), subs: $("subs"),
+  dot: $("dot"), status: $("status"), brand: $("brand"), hint: $("hint"), subs: $("subs"),
   record: $("record"), recLabel: $("recLabel"),
   meterFill: $("meterFill"), meterThresh: $("meterThresh"),
   copy: $("copy"), clear: $("clear"), showSrc: $("showSrc"), showLat: $("showLat"),
@@ -26,6 +26,7 @@ let live = false, ready = false, config = {};
 let direction = load("direction", "id-en");
 let deck = null; // open slide deck: { id, name, pages, sizes }
 let engine = {};  // speech engine state from the server (see /api/engine)
+let loading = false;  // models are warming up; survives a dropped socket
 let page = 1;
 if (!(direction in LABEL)) direction = "id-en"; // e.g. a bad value saved by an older build
 // What the user picked last. "auto" may be unavailable until the server says
@@ -202,18 +203,22 @@ function syncDirectionButtons() {
 
 // ------------------------------------------------------------ engine choice
 
+// Which models are actually running. It used to sit in the top bar, but it is
+// reference information, not a control -- it lives on the brand's tooltip now.
+// The translators come from the engine when it reports them: with the OpenAI
+// engine the configured MLX repos are never loaded, so config would be wrong.
 function renderMeta() {
   const short = (r) => (r || "").split("/").pop();
   const asr = engine.asr_model
     ? `${engine.engine === "openai" ? "OpenAI " : ""}${short(engine.asr_model)}`
     : "not chosen";
-  const mt = Object.entries(config.mt_models || {})
+  const mt = Object.entries(engine.mt_models || config.mt_models || {})
     .map(([d, r]) => `${LABEL[d]} ${short(r)}`).join(" · ");
-  el.meta.textContent = [config.mode, `asr ${asr}`, mt].filter(Boolean).join("  ·  ");
+  el.brand.title = [config.mode, `asr ${asr}`, mt].filter(Boolean).join("  ·  ");
 }
 
 function chosenEngine() {
-  return el.engineForm.querySelector('input[name="engine"]:checked')?.value || "local";
+  return el.engineForm.querySelector('input[name="engine"]:checked')?.value || "openai";
 }
 
 function syncEngineFields() {
@@ -233,7 +238,7 @@ function openEngineDialog() {
     ? "Using OPENAI_API_KEY from the server's .env."
     : "Kept in the server's memory only. It is never written to disk or to this browser.";
 
-  const last = load("engine", "local");
+  const last = load("engine", "openai");
   const radio = el.engineForm.querySelector(`input[name="engine"][value="${last}"]`);
   if (radio) radio.checked = true;
   syncEngineFields();
@@ -302,8 +307,12 @@ function connect() {
     ready = false;
     setDot("");
     el.record.disabled = true;
-    el.recLabel.textContent = "Disconnected";
-    setStatus("connection closed — reconnecting…", true);
+    // Models keep loading on the server across a dropped socket, so say that
+    // rather than "Disconnected" -- the reconnect below picks the step back up.
+    el.recLabel.textContent = loading ? "Loading models…" : "Disconnected";
+    setStatus(loading
+      ? "still loading models on the server — reconnecting…"
+      : "connection closed — reconnecting…", !loading);
     if (live) stopCapture();
     setTimeout(connect, 2000);
   };
@@ -323,6 +332,7 @@ function handle(msg) {
 
     case "choose":
       engine = msg.engine || engine;
+      loading = false;
       openEngineDialog();
       setStatus("choose a speech engine to start");
       break;
@@ -331,9 +341,13 @@ function handle(msg) {
       engine = msg.engine || engine;
       closeEngineDialog();
       renderMeta();
-      setStatus(engine.engine === "openai"
-        ? "checking the OpenAI key, then loading the translation models…"
-        : "loading models — the first run downloads weights, this can take a few minutes…");
+      loading = true;
+      setDot("loading");
+      el.record.disabled = true;
+      // The server names the step it is on; a first run sits on one of these
+      // for minutes, so show it rather than a generic "loading".
+      el.recLabel.textContent = engine.detail || "Loading models…";
+      setStatus(engine.detail || "loading models — the first run downloads weights, this can take a few minutes…");
       break;
 
     case "ready":
@@ -342,6 +356,7 @@ function handle(msg) {
       renderMeta();
       syncDirectionButtons();
       ready = true;
+      loading = false;
       setDot("ready");
       el.record.disabled = false;
       el.recLabel.textContent = "Start listening";
@@ -495,8 +510,8 @@ el.copy.onclick = async () => {
   }
 };
 
-function bindToggle(input, key, bodyClass) {
-  input.checked = load(key, "1") === "1";
+function bindToggle(input, key, bodyClass, dflt = "1") {
+  input.checked = load(key, dflt) === "1";
   const apply = () => {
     document.body.classList.toggle(bodyClass, !input.checked);
     save(key, input.checked ? "1" : "0");
@@ -504,8 +519,8 @@ function bindToggle(input, key, bodyClass) {
   input.onchange = () => { apply(); input.blur(); }; // keep Space for the slides
   apply();
 }
-bindToggle(el.showSrc, "showSrc", "hide-src");
-bindToggle(el.showLat, "showLat", "hide-lat");
+bindToggle(el.showSrc, "showSrc", "hide-src", "0");
+bindToggle(el.showLat, "showLat", "hide-lat", "0");
 
 // Space is left alone on purpose: it belongs to the presenter's slides. A
 // clicked button keeps focus, and Space on a focused button re-clicks it, so

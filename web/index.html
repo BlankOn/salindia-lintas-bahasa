@@ -5,16 +5,42 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Salindia</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>" />
-<link rel="stylesheet" href="styles.css?v=13" />
+<link rel="stylesheet" href="styles.css?v=18" />
 </head>
 <body>
   <header class="bar">
-    <div class="brand">
+    <div class="brand" id="brand">
       <span class="dot" id="dot"></span>
       <strong>Salindia</strong>
       <span class="status" id="status" role="status">connecting…</span>
     </div>
-    <div class="meta" id="meta"></div>
+
+    <!-- Speech and translation live together up here; the footer is for the
+         presentation itself. Model names moved to the brand's tooltip. -->
+    <div class="bar-controls">
+      <button id="record" class="rec" disabled>
+        <span class="rec-icon"></span>
+        <span id="recLabel">Loading models…</span>
+      </button>
+
+      <div class="seg" role="group" aria-label="Translation direction">
+        <button data-dir="id-en" aria-pressed="true">ID → EN</button>
+        <button data-dir="en-id" aria-pressed="false">EN → ID</button>
+        <button data-dir="auto" aria-pressed="false" hidden title="Detect Indonesian or English per sentence">Auto</button>
+      </div>
+
+      <div class="meter" title="Input level — turns green while speech is detected">
+        <div class="meter-fill" id="meterFill"></div>
+        <div class="meter-thresh" id="meterThresh"></div>
+      </div>
+
+      <button id="contextBtn" class="ghost" title="Indonesian style and notes for the translator">Context</button>
+
+      <label class="toggle"><input type="checkbox" id="showSrc" /> Show original text</label>
+      <label class="toggle"><input type="checkbox" id="showLat" /> Show latency</label>
+      <button id="copy" class="ghost">Copy</button>
+      <button id="clear" class="ghost">Clear</button>
+    </div>
   </header>
 
   <main class="stage" id="stage">
@@ -29,22 +55,6 @@
   </main>
 
   <footer class="controls">
-    <button id="record" class="rec" disabled>
-      <span class="rec-icon"></span>
-      <span id="recLabel">Loading models…</span>
-    </button>
-
-    <div class="seg" role="group" aria-label="Translation direction">
-      <button data-dir="id-en" aria-pressed="true">ID → EN</button>
-      <button data-dir="en-id" aria-pressed="false">EN → ID</button>
-      <button data-dir="auto" aria-pressed="false" hidden title="Detect Indonesian or English per sentence">Auto</button>
-    </div>
-
-    <div class="meter" title="Input level — turns green while speech is detected">
-      <div class="meter-fill" id="meterFill"></div>
-      <div class="meter-thresh" id="meterThresh"></div>
-    </div>
-
     <div class="deck">
       <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden />
       <button id="openSlides" class="ghost">Open slides</button>
@@ -52,17 +62,20 @@
         <button id="prevSlide" class="ghost icon" title="Previous slide (←)">‹</button>
         <span class="page" id="pageLabel">1 / 1</span>
         <button id="nextSlide" class="ghost icon" title="Next slide (Space, →)">›</button>
-        <button id="fullscreen" class="ghost" title="Fullscreen (F)">Fullscreen</button>
         <button id="closeSlides" class="ghost icon" title="Close slides">×</button>
       </span>
     </div>
 
-    <button id="contextBtn" class="ghost" title="Indonesian style and notes for the translator">Context</button>
+    <div class="spacer"></div>
 
-    <span class="subpos" title="Subtitle position (Shift+↑ / Shift+↓)">
-      Subtitles
-      <button id="subsUp" class="ghost icon" aria-label="Move subtitles up">▲</button>
-      <button id="subsDown" class="ghost icon" aria-label="Move subtitles down">▼</button>
+    <span class="group" role="group" aria-label="Display and subtitles">
+      <button id="fullscreen" class="ghost" title="Fullscreen (F)">Fullscreen</button>
+      <span class="sep" aria-hidden="true"></span>
+      <span class="subpos" title="Subtitle position (Shift+↑ / Shift+↓)">
+        Subtitles
+        <button id="subsUp" class="ghost icon" aria-label="Move subtitles up">▲</button>
+        <button id="subsDown" class="ghost icon" aria-label="Move subtitles down">▼</button>
+      </span>
       <select id="subsHide" title="Hide each subtitle after this long" aria-label="Hide subtitles after">
         <option value="2">hide 2s</option>
         <option value="3">hide 3s</option>
@@ -73,12 +86,6 @@
         <option value="0">never hide</option>
       </select>
     </span>
-
-    <div class="spacer"></div>
-    <label class="toggle"><input type="checkbox" id="showSrc" checked /> Show original text</label>
-    <label class="toggle"><input type="checkbox" id="showLat" checked /> Show latency</label>
-    <button id="copy" class="ghost">Copy</button>
-    <button id="clear" class="ghost">Clear</button>
   </footer>
 
   <dialog class="engine" id="engineDialog">
@@ -87,20 +94,12 @@
       <p class="sub">Pick a speech-to-text engine. Nothing is loaded until you choose.</p>
 
       <label class="choice">
-        <input type="radio" name="engine" value="local" checked />
-        <span>
-          <b>On this Mac</b>
-          <small>Whisper <code id="localModel">large-v3-turbo</code> on the GPU. Private and free.
-          The first run downloads about 1.6&nbsp;GB.</small>
-        </span>
-      </label>
-
-      <label class="choice">
-        <input type="radio" name="engine" value="openai" />
+        <input type="radio" name="engine" value="openai" checked />
         <span>
           <b>OpenAI API</b>
-          <small>Audio of each sentence is sent to OpenAI and billed per minute to your key.
-          Live preview while speaking is off to avoid paying for throwaway requests.</small>
+          <small>Speech <em>and</em> translation both go to OpenAI, billed to your key.
+          Nothing is loaded locally, so this works on any machine. Live preview while
+          speaking is off to avoid paying for throwaway requests.</small>
         </span>
       </label>
 
@@ -114,7 +113,16 @@
         <p class="note" id="keyNote">Kept in the server's memory only. It is never written to disk or to this browser.</p>
       </div>
 
-      <p class="note">Translation always runs locally on this Mac.</p>
+      <label class="choice">
+        <input type="radio" name="engine" value="local" />
+        <span>
+          <b>Local model <span class="req">Mac only</span></b>
+          <small>Whisper <code id="localModel">large-v3-turbo</code> and the translator both
+          run on the Apple Silicon GPU. Private and free. The first run downloads
+          several GB of weights.</small>
+        </span>
+      </label>
+
       <p class="error" id="engineError" hidden></p>
 
       <div class="actions">
@@ -158,6 +166,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=18"></script>
 </body>
 </html>

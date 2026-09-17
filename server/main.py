@@ -23,6 +23,7 @@ from .gpu import GpuGate
 from .session import StreamSession
 from .slides import SlideError, SlideStore
 from .translate import Translator
+from .translate_openai import OpenAITranslator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,6 +46,10 @@ class State:
     translators: dict[str, Translator] = {}
     mt_pool: ThreadPoolExecutor | None = None
     error: str | None = None
+    # What the "loading" phase is doing right now, in words the page can show.
+    # A first run spends minutes downloading weights; without this the UI has
+    # nothing to say between "loading" and "ready".
+    detail: str = ""
     warm_task: asyncio.Task | None = None
 
     @property
@@ -61,6 +66,7 @@ class State:
         return {
             "directions": list(self.directions()),
             "phase": self.phase,
+            "detail": self.detail,
             "engine": self.engine,
             "asr_model": getattr(self.asr, "repo", None),
             "error": self.error,
@@ -68,7 +74,15 @@ class State:
             "openai_models": list(OPENAI_MODELS),
             "openai_default_model": settings.openai_asr_model,
             "local_asr_model": settings.effective_asr_model,
+            # What is actually loaded, which is not settings.mt_models: the
+            # OpenAI engine never loads the configured MLX repos.
+            "mt_models": {d: t.repo for d, t in self.translators.items()},
         }
+
+
+def _set_detail(label: str) -> None:
+    """Stage callback for the models; called from their worker threads."""
+    state.detail = label
 
 
 state = State()
@@ -77,6 +91,11 @@ slides = SlideStore()
 
 async def _warmup() -> None:
     try:
+        state.detail = (
+            "Checking your OpenAI key…"
+            if state.engine == "openai"
+            else "Downloading and preparing model…"
+        )
         await state.asr.warmup()
     except AsrError as exc:
         # Bad key, unknown model, no network: let the user fix it and retry.
@@ -84,27 +103,91 @@ async def _warmup() -> None:
         await state.asr.aclose()
         state.asr, state.engine = None, None
         state.error = str(exc)
+        state.detail = ""
         state.phase = "choose"
         return
     except Exception as exc:
         log.exception("ASR warmup failed")
         state.error = f"{type(exc).__name__}: {exc}"
+        state.detail = ""
         state.phase = "failed"
         return
 
     try:
-        # One warmup per distinct model, covering every direction it serves.
-        served: dict[int, list[str]] = {}
-        for direction, translator in state.translators.items():
-            served.setdefault(id(translator), []).append(direction)
-        for translator in {id(t): t for t in state.translators.values()}.values():
-            await translator.warmup(tuple(served[id(translator)]), style=settings.id_style)
+        # Only the direction a session starts in is warmed. The other direction
+        # can be a different multi-GB repo (4B for id-en, 8B for en-id) that the
+        # user may never switch to, so it downloads and loads on first use
+        # instead -- one slower sentence beats a download nobody asked for.
+        start = settings.default_direction
+        translator = state.translators.get(start)
+        if translator is not None:
+            # The translator reports its own steps: the download/load, then the
+            # warmup sentence. Both are slow enough to need separate labels.
+            translator.on_stage = _set_detail
+            state.detail = (
+                "Checking the translation model…"
+                if getattr(translator, "engine", "") == "openai"
+                else "Downloading and preparing model…"
+            )
+            try:
+                await translator.warmup((start,), style=settings.id_style)
+            finally:
+                translator.on_stage = None
+        state.detail = ""
         state.phase = "ready"
-        log.info("all models ready (speech engine: %s)", state.asr.repo)
+        log.info(
+            "ready (speech engine: %s, translator: %s)",
+            state.asr.repo,
+            translator.repo if translator is not None else "none",
+        )
     except Exception as exc:  # surfaced to the UI rather than killing the server
         log.exception("model warmup failed")
         state.error = f"{type(exc).__name__}: {exc}"
+        state.detail = ""
         state.phase = "failed"
+
+
+def _build_translators(engine: str, api_key: str = "") -> None:
+    """Translators for the chosen engine. MODE=direct needs none.
+
+    With the OpenAI engine the translation also goes to the API, so nothing
+    local is loaded at all -- the point of the pairing, since the MLX
+    translator is only usable on Apple Silicon.
+    """
+    for old in {id(t): t for t in state.translators.values()}.values():
+        if (aclose := getattr(old, "aclose", None)) is not None:
+            asyncio.create_task(aclose())
+    state.translators = {}
+    if settings.mode != "pipeline":
+        return
+
+    if engine == "openai":
+        shared = OpenAITranslator(
+            api_key=api_key or settings.openai_api_key,
+            model=settings.openai_mt_model,
+            base_url=settings.openai_base_url,
+            max_tokens=settings.mt_max_tokens,
+            context_turns=settings.mt_context_turns,
+        )
+        state.translators = dict.fromkeys(settings.directions, shared)
+    else:
+        if state.mt_pool is None:
+            state.mt_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt")
+        by_repo: dict[str, Translator] = {}
+        for direction in settings.directions:
+            repo = settings.mt_model_for(direction)
+            if repo not in by_repo:
+                by_repo[repo] = Translator(
+                    repo,
+                    settings.mt_max_tokens,
+                    settings.mt_context_turns,
+                    pool=state.mt_pool,
+                    gate=state.gate,
+                )
+            state.translators[direction] = by_repo[repo]
+
+    for direction, t in state.translators.items():
+        log.info("translator %s: %s", direction, t.repo)
 
 
 def start_engine(engine: str, api_key: str = "", model: str = "") -> None:
@@ -123,8 +206,10 @@ def start_engine(engine: str, api_key: str = "", model: str = "") -> None:
             task=task,
             partials=settings.openai_partials,
         )
+    _build_translators(engine, api_key)
     state.engine = engine
     state.error = None
+    state.detail = "Starting the speech engine…"
     state.phase = "loading"
     log.info("speech engine: %s (%s)", engine, state.asr.repo)
     state.warm_task = asyncio.create_task(_warmup())
@@ -132,23 +217,6 @@ def start_engine(engine: str, api_key: str = "", model: str = "") -> None:
 
 async def lifespan(app: FastAPI):
     state.gate = GpuGate()  # shared by every local model in the process
-    if settings.mode == "pipeline":
-        state.mt_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt")
-        by_repo: dict[str, Translator] = {}
-        for direction in settings.directions:
-            repo = settings.mt_model_for(direction)
-            if repo not in by_repo:
-                by_repo[repo] = Translator(
-                    repo,
-                    settings.mt_max_tokens,
-                    settings.mt_context_turns,
-                    pool=state.mt_pool,
-                    gate=state.gate,
-                )
-            state.translators[direction] = by_repo[repo]
-        for direction, t in state.translators.items():
-            log.info("translator %s: %s", direction, t.repo)
-
     log.info("mode=%s", settings.mode)
     if settings.asr_engine:
         try:
@@ -165,6 +233,9 @@ async def lifespan(app: FastAPI):
             state.warm_task.cancel()
         if state.asr:
             state.asr.shutdown()
+        for t in {id(t): t for t in state.translators.values()}.values():
+            if (aclose := getattr(t, "aclose", None)) is not None:
+                await aclose()
             await state.asr.aclose()
         if state.mt_pool:
             state.mt_pool.shutdown(wait=False, cancel_futures=True)
@@ -285,7 +356,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
     # multi-gigabyte download. Tell the page each time the situation changes.
     last = None
     while not state.ready:
-        now = (state.phase, state.error)
+        now = (state.phase, state.error, state.detail)
         if now != last:
             last = now
             info = state.engine_info()

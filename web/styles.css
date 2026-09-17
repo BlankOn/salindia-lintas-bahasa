@@ -33,9 +33,15 @@ body { display: flex; flex-direction: column; }
 /* ---- top bar ---------------------------------------------------------- */
 .bar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 10px 20px; border-bottom: 1px solid var(--line);
-  background: var(--panel); flex: 0 0 auto;
+  padding: 8px 20px; border-bottom: 1px solid var(--line);
+  background: var(--panel); flex: 0 0 auto; flex-wrap: wrap;
 }
+/* Speech and translation: everything that decides what the subtitles say. */
+.bar-controls {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  justify-content: flex-end; min-width: 0;
+}
+.brand { cursor: default; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .status {
   color: var(--muted); font-size: 12px;
@@ -44,14 +50,12 @@ body { display: flex; flex-direction: column; }
   padding-left: 10px; border-left: 1px solid var(--line);
 }
 .status.err { color: var(--red); }
-.meta {
-  color: var(--muted); font-size: 11px; text-align: right;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
 
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: 0 0 auto; }
 .dot.ready { background: var(--green); }
 .dot.live  { background: var(--red); animation: pulse 1.4s ease-in-out infinite; }
+/* Warming up: work is happening, but nothing can be recorded yet. */
+.dot.loading { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
 
 /* ---- stage + subtitles ------------------------------------------------- */
@@ -138,7 +142,7 @@ body.hide-lat .cue .lat { display: none; }
 /* ---- controls ------------------------------------------------------------ */
 .controls {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 10px 20px; border-top: 1px solid var(--line);
+  padding: 8px 20px; border-top: 1px solid var(--line);
   background: var(--panel); flex: 0 0 auto;
 }
 .spacer { flex: 1 1 auto; }
@@ -167,6 +171,16 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .ghost:hover:not(:disabled) { background: var(--line); }
 .ghost.icon { padding: 5px 10px; font-size: 16px; line-height: 1; }
 
+/* Presentation controls travel together: fullscreen, subtitle position, and
+   how long each subtitle stays up. Boxed so they read as one cluster rather
+   than four loose buttons in a long row. */
+.group {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 6px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2);
+}
+.group .sep { width: 1px; align-self: stretch; margin: 2px 1px; background: var(--line); }
+
 .subpos { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 13px; }
 .subpos .ghost.icon { padding: 4px 8px; font-size: 12px; }
 .subpos select {
@@ -193,7 +207,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
 @media (max-width: 700px) {
   .bar, .controls { padding: 8px 16px; }
-  .meta, .meter { display: none; }
+  .meter { display: none; }
 }
 
 /* ---- engine chooser ------------------------------------------------------- */
@@ -218,6 +232,12 @@ dialog.engine .sub { margin: -6px 0 4px; color: var(--muted); font-size: 13px; }
 .choice b { display: block; margin-bottom: 2px; }
 .choice small { color: var(--muted); font-size: 12.5px; line-height: 1.45; display: block; }
 .choice code { font-size: 11.5px; }
+/* "Mac only" and friends: a platform caveat sitting inline with the choice title */
+.choice .req {
+  margin-left: 6px; padding: 1px 6px; border-radius: 999px; vertical-align: 1px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--muted); background: var(--bg); border: 1px solid var(--line);
+}
 
 .openai-fields { display: flex; flex-direction: column; gap: 8px; padding: 2px 2px 0 38px; }
 .openai-fields[hidden] { display: none; }
