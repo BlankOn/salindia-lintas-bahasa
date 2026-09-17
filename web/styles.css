@@ -74,9 +74,23 @@ body { display: flex; flex-direction: column; }
 .talk-title {
   font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--muted); cursor: pointer;
-  max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* One fixed width, so naming a talk never reflows the bar. A long title
+     fades out at the edge instead of ending in an ellipsis: the chip is a
+     label, and "..." reads like something is missing rather than trimmed.
+     The full title is in the tooltip, and the dialog shows it in full. */
+  width: 20ch; flex: 0 0 auto; position: relative;
+  overflow: hidden; white-space: nowrap; text-align: left;
   padding: 2px 8px; border-radius: 999px;
   background: var(--panel-2); border: 1px solid var(--line);
+}
+/* The fade itself: the chip's own background over the last few characters, so
+   an overlong title dissolves instead of being cut mid-letter. A gradient over
+   the text rather than a mask on the button, which would fade the pill's
+   border with it. Short titles end before it and are untouched. */
+.talk-title::after {
+  content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 2.4em;
+  background: linear-gradient(to right, transparent, var(--panel-2));
+  border-radius: 0 999px 999px 0; pointer-events: none;
 }
 .talk-title:hover { color: var(--text); border-color: var(--accent); }
 .talk-title[hidden] { display: none; }

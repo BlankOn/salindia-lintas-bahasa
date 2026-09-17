@@ -1335,7 +1335,10 @@ async function openPdf(file) {
     await saveDeckBytes(bytes, file.name);
     showDeck();
     await goTo(1);
-    setStatus(`${deck.name} · ${deck.pages} slides — Space / → next, ← previous, F fullscreen`);
+    // Short on purpose: the bar has room for a state, not for a filename and a
+    // key list. The page counter is in the footer, and clicking the slide (or
+    // Space / →) turns it.
+    setStatus(`${deck.pages} slides ready`);
   } catch (err) {
     setStatus(`could not open slides: ${err.message}`, true);
   }
@@ -1413,6 +1416,17 @@ el.openSlides.onclick = () => el.pdfInput.click();
 el.pdfInput.onchange = () => { openPdf(el.pdfInput.files[0]); el.pdfInput.value = ""; };
 el.prevSlide.onclick = () => goTo(page - 1);
 el.nextSlide.onclick = () => goTo(page + 1);
+
+// The slide itself is the biggest target in the room: click it to go forward,
+// right-click to go back. Bound to the canvas rather than the stage, so the
+// direction control sitting over the slides keeps its own clicks.
+el.slide.onclick = () => goTo(page + 1);
+el.slide.oncontextmenu = (e) => {
+  // No browser menu over the slides: mid-talk it covers what the audience
+  // came to see, and the gesture is the one that goes back.
+  e.preventDefault();
+  goTo(page - 1);
+};
 el.closeSlides.onclick = closeDeck;
 el.fullscreen.onclick = toggleFullscreen;
 
